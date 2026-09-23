@@ -209,3 +209,89 @@ class BehaviorRuleEngine:
 
 # Singleton instance for simple imports
 rule_engine = BehaviorRuleEngine()
+
+
+def evaluate_operator_telemetry(db: Any, operator_id: str, date_str: Optional[str] = None) -> List[Any]:
+    """
+    Evaluates telemetry readings for a given operator (and optional date),
+    persists any triggered BehaviorFlag objects in the database, and returns them.
+    """
+    from app.models.telemetry import Telemetry
+    from app.models.behavior import BehaviorFlag
+    from sqlalchemy import func
+
+    # Query telemetry from DB
+    query = db.query(Telemetry).filter(Telemetry.operator_id == operator_id)
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            query = query.filter(func.date(Telemetry.timestamp) == target_date)
+        except Exception:
+            pass
+
+    telemetry_records = query.order_by(Telemetry.timestamp.asc()).all()
+    created_flags = []
+
+    if telemetry_records:
+        min_hours = min((t.engine_hours or 0.0 for t in telemetry_records), default=0.0)
+        for t in telemetry_records:
+            rec = {
+                "operator_id": t.operator_id,
+                "machine_id": t.machine_id,
+                "timestamp": t.timestamp,
+                "engine_hours": t.engine_hours,
+                "fuel_used_l": t.fuel_used_l,
+                "load_cycles": t.load_cycles,
+                "idling_time_min": t.idling_time_min,
+                "seatbelt_status": t.seatbelt_status,
+                "safety_alert_triggered": t.safety_alert_triggered,
+            }
+            flags = rule_engine.evaluate_telemetry_event(rec, shift_start_engine_hours=min_hours)
+            for f in flags:
+                flag_obj = BehaviorFlag(
+                    operator_id=f["operator_id"],
+                    machine_id=f["machine_id"],
+                    flag_type=f["flag_type"],
+                    risk_level=f["risk_level"],
+                    details=f["details"],
+                    timestamp=datetime.fromisoformat(f["timestamp"]) if isinstance(f["timestamp"], str) else f["timestamp"]
+                )
+                db.add(flag_obj)
+                created_flags.append(flag_obj)
+        db.commit()
+    else:
+        # Fallback evaluation: check telemetry.csv
+        from pathlib import Path
+        csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "telemetry.csv"
+        if csv_path.exists():
+            tdf = pd.read_csv(csv_path)
+            op_df = tdf[tdf["operator_id"] == operator_id].copy()
+            if not op_df.empty:
+                op_df["timestamp"] = pd.to_datetime(op_df["timestamp"])
+                if date_str:
+                    op_df = op_df[op_df["timestamp"].dt.strftime("%Y-%m-%d") == date_str]
+                flag_dicts = rule_engine.evaluate_telemetry_dataframe(op_df)
+                for f in flag_dicts[:5]:  # Take top 5
+                    ts = f["timestamp"]
+                    if isinstance(ts, str):
+                        try:
+                            ts_dt = datetime.fromisoformat(ts)
+                        except Exception:
+                            ts_dt = datetime.utcnow()
+                    else:
+                        ts_dt = datetime.utcnow()
+
+                    flag_obj = BehaviorFlag(
+                        operator_id=f["operator_id"],
+                        machine_id=f["machine_id"],
+                        flag_type=f["flag_type"],
+                        risk_level=f["risk_level"],
+                        details=f["details"],
+                        timestamp=ts_dt
+                    )
+                    db.add(flag_obj)
+                    created_flags.append(flag_obj)
+                db.commit()
+
+    return created_flags
+

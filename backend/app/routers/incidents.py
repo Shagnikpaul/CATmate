@@ -15,59 +15,23 @@ from app.schemas.incident import (
     IncidentListResponse
 )
 
+from app.services.llm_service import llm_service
+
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
-def parse_incident_text(raw_text: str) -> IncidentStructured:
-    """Extract structured fields (type, location, severity) from raw transcript."""
-    text_lower = raw_text.lower()
-
-    # Determine Type
-    if "hydraulic" in text_lower or "leak" in text_lower or "fluid" in text_lower:
-        inc_type = "Hydraulic Leak"
-    elif "engine" in text_lower or "smoke" in text_lower or "overheat" in text_lower:
-        inc_type = "Engine Overheat / Smoke"
-    elif "track" in text_lower or "tire" in text_lower or "wheel" in text_lower:
-        inc_type = "Undercarriage / Track Issue"
-    elif "brake" in text_lower or "braking" in text_lower:
-        inc_type = "Braking System Anomaly"
-    elif "electrical" in text_lower or "wire" in text_lower or "sensor" in text_lower:
-        inc_type = "Electrical / Sensor Fault"
-    elif "collision" in text_lower or "hit" in text_lower or "obstacle" in text_lower:
-        inc_type = "Collision / Hazard Encounter"
-    else:
-        inc_type = "General Equipment Issue"
-
-    # Determine Location
-    if "bucket" in text_lower:
-        location = "Near Bucket / Front Attachment"
-    elif "cabin" in text_lower or "cab" in text_lower:
-        location = "Operator Cabin"
-    elif "engine" in text_lower or "hood" in text_lower or "rear" in text_lower:
-        location = "Engine Compartment"
-    elif "boom" in text_lower or "arm" in text_lower:
-        location = "Main Boom Assembly"
-    elif "trench" in text_lower or "zone" in text_lower or "bay" in text_lower:
-        location = "Working Trench / Bay"
-    else:
-        location = "Site Perimeter"
-
-    # Determine Severity
-    if any(w in text_lower for w in ["fire", "smoke", "crash", "critical", "severe", "danger", "burst"]):
-        severity = "High"
-    elif any(w in text_lower for w in ["leak", "slip", "warning", "hot", "slow", "noise", "abnormal"]):
-        severity = "Medium"
-    else:
-        severity = "Low"
-
-    return IncidentStructured(type=inc_type, location=location, severity=severity)
 
 @router.post("", response_model=IncidentCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
     """
     Takes raw transcript from operator's spoken report (and optional photo),
-    structures the incident fields, saves to database, and returns confirmation.
+    structures the incident fields via Groq LLM, saves to database, and returns confirmation.
     """
-    structured = parse_incident_text(payload.raw_text)
+    structured_data = llm_service.structure_incident(payload.raw_text)
+    structured = IncidentStructured(
+        type=structured_data.get("type", "General Equipment Issue"),
+        location=structured_data.get("location", "Machine Work Zone"),
+        severity=structured_data.get("severity", "Medium")
+    )
     
     # Generate realistic incident ID
     incident_num = random.randint(10, 999)

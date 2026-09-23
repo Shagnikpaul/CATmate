@@ -17,6 +17,17 @@ INDEX_PATH = ML_DIR / "faiss_index.bin"
 METADATA_PATH = ML_DIR / "chunks_metadata.json"
 
 
+MACHINE_TO_MANUAL = {
+    "EXC001": "CAT-320D",
+    "EXC002": "CAT-320D",
+    "EXC003": "CAT-320D",
+    "CAT-320": "CAT-320D",
+    "CAT-320D": "CAT-320D",
+    "CAT-322": "CAT-322",
+    "EXCAVATOR": "CAT-320D",
+}
+
+
 class ManualRAGService:
     """
     RAG service that loads the pre-computed FAISS index and chunk metadata,
@@ -86,11 +97,17 @@ class ManualRAGService:
         if not clean_query:
             return []
 
+        # Resolve machine_id or model alias to manual_id
+        resolved_manual = None
+        if manual_id:
+            m_key = manual_id.strip().upper()
+            resolved_manual = MACHINE_TO_MANUAL.get(m_key, manual_id)
+
         # Generate normalized embedding
         query_vec = self.encoder.encode([clean_query], normalize_embeddings=True).astype(np.float32)
 
-        # Retrieve a few extra candidates if manual filtering is requested
-        fetch_k = top_k * 4 if manual_id else top_k
+        # Retrieve candidates from index
+        fetch_k = top_k * 6 if resolved_manual else top_k
         fetch_k = min(fetch_k, len(self.chunks_metadata))
 
         scores, indices = self.index.search(query_vec, fetch_k)
@@ -101,8 +118,8 @@ class ManualRAGService:
                 continue
             chunk = self.chunks_metadata[idx]
 
-            # Optional filter by manual_id (e.g., "CAT-320D" or "CAT-322")
-            if manual_id and manual_id.upper() not in chunk.get("manual_id", "").upper():
+            # Optional filter by manual_id
+            if resolved_manual and resolved_manual.upper() not in chunk.get("manual_id", "").upper():
                 continue
 
             manual_title = chunk.get("manual_title", "CAT Operation Manual")
@@ -120,6 +137,24 @@ class ManualRAGService:
 
             if len(results) >= top_k:
                 break
+
+        # Fallback to general search if filtered manual had no matching chunks
+        if not results and resolved_manual:
+            for score, idx in zip(scores[0], indices[0]):
+                if idx < 0 or idx >= len(self.chunks_metadata):
+                    continue
+                chunk = self.chunks_metadata[idx]
+                results.append({
+                    "chunk_id": chunk.get("chunk_id", int(idx)),
+                    "manual_id": chunk.get("manual_id"),
+                    "manual_title": chunk.get("manual_title", "CAT Operation Manual"),
+                    "page_number": chunk.get("page_number", 1),
+                    "chunk_text": chunk.get("chunk_text"),
+                    "score": float(score),
+                    "citation": f"{chunk.get('manual_title', 'CAT Operation Manual')}, p.{chunk.get('page_number', 1)}"
+                })
+                if len(results) >= top_k:
+                    break
 
         return results
 

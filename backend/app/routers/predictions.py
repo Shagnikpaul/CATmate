@@ -1,66 +1,42 @@
-"""Task duration time estimation router."""
-from fastapi import APIRouter
+"""
+Task Time Prediction Router (Section 5 & 6d).
+POST /api/predict/task-time
+Powered by the trained Scikit-Learn Random Forest regression model.
+"""
+
+from fastapi import APIRouter, HTTPException, status
 from app.schemas.prediction import TaskTimePredictRequest, TaskTimePredictResponse
+from app.services.predictor import predictor_service
 
 router = APIRouter(prefix="/predict", tags=["Predictions"])
 
-# Baseline task duration lookup (minutes)
-TASK_BASELINES = {
-    "excavation": 60,
-    "loading": 45,
-    "trenching": 50,
-    "grading": 40,
-    "backfilling": 35,
-    "hauling": 30,
-    "compaction": 45,
-    "clearing": 55
-}
 
-@router.post("/task-time", response_model=TaskTimePredictResponse)
+@router.post(
+    "/task-time",
+    response_model=TaskTimePredictResponse,
+    summary="Predict task completion duration",
+    description="Runs the trained Random Forest regression model on task type, weather, operator skill, and machine age."
+)
 def predict_task_time(payload: TaskTimePredictRequest):
     """
-    Predicts task duration based on task type, weather, operator skill, and machine age.
-    Called both when scheduling and live by the pace indicator.
+    Predicts task duration based on task type, weather, operator skill, machine age,
+    and initial baseline estimate using the trained Scikit-Learn pipeline.
     """
-    task_key = payload.task_type.lower().strip()
-    baseline = TASK_BASELINES.get(task_key, payload.estimated_time_min or 45)
-
-    # Weather multiplier
-    weather_lower = payload.weather.lower().strip()
-    weather_multiplier = 1.0
-    if "rain" in weather_lower or "storm" in weather_lower:
-        weather_multiplier = 1.25
-    elif "wind" in weather_lower:
-        weather_multiplier = 1.10
-    elif "fog" in weather_lower:
-        weather_multiplier = 1.15
-
-    # Skill multiplier
-    skill_lower = payload.operator_skill.lower().strip()
-    skill_multiplier = 1.0
-    if "beginner" in skill_lower:
-        skill_multiplier = 1.20
-    elif "expert" in skill_lower:
-        skill_multiplier = 0.85
-    elif "intermediate" in skill_lower:
-        skill_multiplier = 1.0
-
-    # Machine age factor (1.5% per year)
-    age_multiplier = 1.0 + (max(0, payload.machine_age_yrs) * 0.015)
-
-    # Calculate final predicted minutes
-    predicted = int(round(baseline * weather_multiplier * skill_multiplier * age_multiplier))
-
-    # Determine confidence level
-    if abs(predicted - baseline) <= 10:
-        confidence = "high"
-    elif abs(predicted - baseline) <= 25:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    return TaskTimePredictResponse(
-        predicted_time_min=predicted,
-        baseline_estimate_min=baseline,
-        confidence=confidence
-    )
+    try:
+        prediction = predictor_service.predict(
+            task_type=payload.task_type,
+            weather=payload.weather,
+            operator_skill=payload.operator_skill,
+            machine_age_yrs=payload.machine_age_yrs,
+            estimated_time_min=payload.estimated_time_min
+        )
+        return TaskTimePredictResponse(
+            predicted_time_min=prediction["predicted_time_min"],
+            baseline_estimate_min=prediction["baseline_estimate_min"],
+            confidence=prediction["confidence"]
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Task time prediction error: {str(e)}"
+        )

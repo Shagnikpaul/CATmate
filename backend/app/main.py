@@ -1,4 +1,5 @@
 """FastAPI app entrypoint, router includes, and WebSocket setup."""
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -16,10 +17,23 @@ from app.routers import (
     ws_router
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifecycle: auto-initialize tables and seed data on startup."""
+    try:
+        from app.database_seed import seed_database
+        seed_database()
+    except Exception as e:
+        print(f"[Startup] Database auto-seed note: {e}")
+    yield
+
+
 app = FastAPI(
     title="CatMate API",
     description="Voice-first wellness and operations assistant for CAT machine operators and site managers.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS Middleware configuration
@@ -45,6 +59,7 @@ app.include_router(manager_router, prefix="/api")
 # Include WebSockets
 app.include_router(ws_router)
 
+
 @app.get("/")
 def root():
     return {
@@ -54,6 +69,7 @@ def root():
         "docs": "/docs"
     }
 
+
 @app.get("/api/health")
 def health_check():
     return {
@@ -61,6 +77,7 @@ def health_check():
         "database": "connected",
         "environment": settings.ENVIRONMENT
     }
+
 
 if __name__ == "__main__":
     import uvicorn

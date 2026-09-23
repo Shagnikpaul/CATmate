@@ -1,7 +1,6 @@
 """Training modules and assignments models."""
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -10,7 +9,7 @@ class TrainingModule(Base):
 
     module_id = Column(Text, primary_key=True, index=True)
     title = Column(Text, nullable=True)
-    topic_tags = Column(ARRAY(Text), nullable=True)
+    topic_tags = Column(JSON, nullable=True)
     video_url = Column(Text, nullable=True)
     duration_sec = Column(Integer, nullable=True)
 
