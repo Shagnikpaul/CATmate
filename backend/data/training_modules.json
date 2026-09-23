@@ -1,0 +1,117 @@
+[
+  {
+    "module_id": "M001",
+    "title": "Smooth Braking & Inertia Management",
+    "topic_tags": [
+      "braking",
+      "safety",
+      "wear_reduction"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m001_smooth_braking.mp4",
+    "duration_sec": 90,
+    "description": "Techniques for gradual deceleration and hydraulic retarder engagement on steep grades."
+  },
+  {
+    "module_id": "M002",
+    "title": "Anti-Idling Protocols & Auto-Shutdown",
+    "topic_tags": [
+      "idling",
+      "fuel_efficiency"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m002_anti_idling.mp4",
+    "duration_sec": 75,
+    "description": "Configuring automatic engine idle shutdown (AIES) and cab climate management."
+  },
+  {
+    "module_id": "M003",
+    "title": "Eco-Mode Power Band Optimization",
+    "topic_tags": [
+      "fuel_efficiency",
+      "hydraulics"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m003_eco_mode.mp4",
+    "duration_sec": 120,
+    "description": "Maximizing hydraulic torque while operating within standard Eco-Mode RPM ranges."
+  },
+  {
+    "module_id": "M004",
+    "title": "3-Point Contact & In-Cab Harness Compliance",
+    "topic_tags": [
+      "safety",
+      "seatbelt"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m004_cab_safety.mp4",
+    "duration_sec": 60,
+    "description": "Mandatory safety interlock procedures, seatbelt tension verification, and egress safety."
+  },
+  {
+    "module_id": "M005",
+    "title": "Fatigue Mitigation & Shift Pacing",
+    "topic_tags": [
+      "fatigue",
+      "safety",
+      "wellness"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m005_fatigue_mitigation.mp4",
+    "duration_sec": 110,
+    "description": "Recognizing early physical fatigue signs, micro-breaks, hydration, and cabin ergonomic setup."
+  },
+  {
+    "module_id": "M006",
+    "title": "Cycle Time Efficiency in Trenching Bay",
+    "topic_tags": [
+      "productivity",
+      "trenching"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m006_cycle_efficiency.mp4",
+    "duration_sec": 95,
+    "description": "Optimal bucket curl angles and swing arc control to minimize wasted cycle seconds."
+  },
+  {
+    "module_id": "M007",
+    "title": "Hydraulic Leak Detection & Daily Circle Inspection",
+    "topic_tags": [
+      "inspection",
+      "safety",
+      "maintenance"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m007_circle_inspection.mp4",
+    "duration_sec": 140,
+    "description": "Ground-level inspection walkaround: checking cylinder seals, hoses, and sight gauges."
+  },
+  {
+    "module_id": "M008",
+    "title": "Blind Spot Awareness & Proximity Radar Protocol",
+    "topic_tags": [
+      "safety",
+      "proximity",
+      "awareness"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m008_blindspot_protocol.mp4",
+    "duration_sec": 85,
+    "description": "Responding promptly to Cat Detect proximity warnings and establishing exclusion zones."
+  },
+  {
+    "module_id": "M009",
+    "title": "Heavy Mud & Slippery Grade Navigation",
+    "topic_tags": [
+      "weather",
+      "traction",
+      "safety"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m009_mud_traction.mp4",
+    "duration_sec": 105,
+    "description": "Differential lock utilization and track slippage prevention in rainy conditions."
+  },
+  {
+    "module_id": "M010",
+    "title": "Loading Bay Spillage & Payload Management",
+    "topic_tags": [
+      "fuel_efficiency",
+      "productivity"
+    ],
+    "video_url": "https://assets.catmate.internal/videos/m010_payload_control.mp4",
+    "duration_sec": 90,
+    "description": "Centering bucket payloads over haul trucks to reduce tire wear and spillage re-work."
+  }
+]
