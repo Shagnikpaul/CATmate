@@ -1,133 +1,211 @@
-"""Rule engine for behavior and fatigue detection from operator telemetry."""
+"""
+Operator Behavior & Fatigue Rule Engine (Section 6c)
+
+Implements the 5 core behavioral/fatigue flag rules:
+1. Excessive Idling: Idling Time > 45 min
+2. Fuel Inefficiency: Fuel Used / Load Cycles > 1.5x operator's own average
+3. Low Productivity: Cycles < 3 AND Idling > 30 min
+4. Critical Safety Pattern: Seatbelt Unfastened + Alert Triggered = True
+5. Fatigue Risk (composite): Idling + Engine Hours trend + Timestamp (late shift) (>= 2 true)
+"""
+
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app.models.telemetry import Telemetry
-from app.models.behavior import BehaviorFlag
+from typing import Any, Dict, List, Optional, Union
+import pandas as pd
 
-def evaluate_operator_telemetry(
-    db: Session,
-    operator_id: str,
-    target_date: Optional[str] = None
-) -> List[BehaviorFlag]:
+
+class BehaviorRuleEngine:
     """
-    Evaluates telemetry data for an operator using the 5 PRD rule-engine heuristics.
-    Persists new behavior flags to the database if not already logged.
+    Evaluates telemetry readings against CAT safety, efficiency, and fatigue rules.
+    Provides batch processing for telemetry dataframes and single-event evaluation.
     """
-    query = db.query(Telemetry).filter(Telemetry.operator_id == operator_id)
-    if target_date:
-        try:
-            date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
-            query = query.filter(func.date(Telemetry.timestamp) == date_obj)
-        except Exception:
-            pass
 
-    records = query.order_by(Telemetry.timestamp.asc()).all()
-    if not records:
-        # Return existing flags if no raw records in range
-        return db.query(BehaviorFlag).filter(BehaviorFlag.operator_id == operator_id).all()
+    DEFAULT_BASELINE_FUEL_PER_CYCLE = 2.85  # Liters per load cycle default
 
-    # Calculate operator baseline averages
-    total_fuel = sum(r.fuel_used_l or 0.0 for r in records)
-    total_cycles = sum(r.load_cycles or 0 for r in records)
-    avg_fuel_per_cycle = (total_fuel / total_cycles) if total_cycles > 0 else 5.0
+    def __init__(self, baseline_ratios: Optional[Dict[str, float]] = None):
+        """
+        :param baseline_ratios: Optional map of operator_id -> baseline fuel_used / load_cycles ratio
+        """
+        self.baseline_ratios: Dict[str, float] = baseline_ratios or {}
 
-    generated_flags = []
+    def calculate_baselines_from_df(self, df: pd.DataFrame) -> Dict[str, float]:
+        """
+        Compute each operator's average fuel consumed per load cycle across historical shifts.
+        """
+        valid_df = df[(df["load_cycles"] > 0) & (df["fuel_used_l"] > 0)].copy()
+        if valid_df.empty:
+            return {}
 
-    for r in records:
-        machine_id = r.machine_id or "EXC001"
-        ts = r.timestamp or datetime.utcnow()
-        idling = r.idling_time_min or 0
-        cycles = r.load_cycles or 0
-        fuel = r.fuel_used_l or 0.0
-        seatbelt = (r.seatbelt_status or "Fastened").lower()
-        alert = bool(r.safety_alert_triggered)
+        valid_df["fuel_per_cycle"] = valid_df["fuel_used_l"] / valid_df["load_cycles"]
+        grouped = valid_df.groupby("operator_id")["fuel_per_cycle"].median().to_dict()
+        self.baseline_ratios.update(grouped)
+        return self.baseline_ratios
 
-        # Rule 1: Excessive Idling (> 45 min)
-        if idling > 45:
-            flag = BehaviorFlag(
-                operator_id=operator_id,
-                machine_id=machine_id,
-                flag_type="Excessive Idling",
-                risk_level="Medium",
-                details=f"Continuous idling recorded at {idling} min (threshold: 45 min).",
-                timestamp=ts
-            )
-            generated_flags.append(flag)
+    def get_operator_baseline(self, operator_id: str) -> float:
+        return self.baseline_ratios.get(operator_id, self.DEFAULT_BASELINE_FUEL_PER_CYCLE)
 
-        # Rule 2: Fuel Inefficiency (> 1.5x avg)
-        fuel_per_cycle = (fuel / cycles) if cycles > 0 else fuel
-        if fuel_per_cycle > (1.5 * avg_fuel_per_cycle) and fuel > 15:
-            flag = BehaviorFlag(
-                operator_id=operator_id,
-                machine_id=machine_id,
-                flag_type="Fuel Inefficiency",
-                risk_level="Low",
-                details=f"Fuel consumption {fuel_per_cycle:.1f} L/cycle exceeds 1.5x operator baseline ({avg_fuel_per_cycle:.1f} L/cycle).",
-                timestamp=ts
-            )
-            generated_flags.append(flag)
+    def evaluate_telemetry_event(
+        self,
+        record: Dict[str, Any],
+        shift_start_engine_hours: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Evaluate a single telemetry event (dict) and return a list of triggered flags.
+        Flag schema:
+        {
+            "operator_id": str,
+            "machine_id": str,
+            "flag_type": str,
+            "risk_level": "Low" | "Medium" | "High" | "Critical",
+            "details": str,
+            "timestamp": str
+        }
+        """
+        flags: List[Dict[str, Any]] = []
 
-        # Rule 3: Low Productivity (Cycles < 3 AND Idling > 30)
-        if cycles < 3 and idling > 30:
-            flag = BehaviorFlag(
-                operator_id=operator_id,
-                machine_id=machine_id,
-                flag_type="Low Productivity",
-                risk_level="Medium",
-                details=f"Only {cycles} cycles completed with {idling} min idling time in evaluation window.",
-                timestamp=ts
-            )
-            generated_flags.append(flag)
+        operator_id = record.get("operator_id", "UNKNOWN")
+        machine_id = record.get("machine_id", "UNKNOWN")
+        timestamp_raw = record.get("timestamp")
+        
+        # Parse timestamp
+        if isinstance(timestamp_raw, str):
+            try:
+                dt = datetime.fromisoformat(timestamp_raw)
+            except ValueError:
+                dt = datetime.strptime(timestamp_raw, "%Y-%m-%d %H:%M:%S")
+        elif isinstance(timestamp_raw, datetime):
+            dt = timestamp_raw
+        else:
+            dt = datetime.now()
 
-        # Rule 4: Critical Safety Pattern (Unfastened + Alert)
-        if seatbelt == "unfastened" and alert:
-            flag = BehaviorFlag(
-                operator_id=operator_id,
-                machine_id=machine_id,
-                flag_type="Critical Safety Pattern",
-                risk_level="High",
-                details="Proximity safety alert triggered while seatbelt was unfastened.",
-                timestamp=ts
-            )
-            generated_flags.append(flag)
+        timestamp_str = dt.isoformat()
 
-        # Rule 5: Fatigue Risk (composite >= 2 conditions)
-        fatigue_conditions = 0
+        # Telemetry metrics
+        idling_time = float(record.get("idling_time_min", 0))
+        fuel_used = float(record.get("fuel_used_l", 0.0))
+        load_cycles = int(record.get("load_cycles", 0))
+        engine_hours = float(record.get("engine_hours", 0.0))
+        seatbelt = str(record.get("seatbelt_status", "Fastened")).strip().title()
+        alert_triggered = bool(record.get("safety_alert_triggered", False))
+
+        # --- Rule 1: Excessive Idling (Idling Time > 45 min) ---
+        if idling_time > 45:
+            risk = "High" if idling_time >= 60 else "Medium"
+            flags.append({
+                "operator_id": operator_id,
+                "machine_id": machine_id,
+                "flag_type": "Excessive Idling",
+                "risk_level": risk,
+                "details": f"Machine idling reached {int(idling_time)} min (threshold: 45 min). Recommend auto-shutdown check.",
+                "timestamp": timestamp_str
+            })
+
+        # --- Rule 2: Fuel Inefficiency (Fuel Used ÷ Load Cycles > 1.5× baseline) ---
+        if load_cycles >= 3 and fuel_used > 5.0:
+            current_ratio = fuel_used / load_cycles
+            op_baseline = self.get_operator_baseline(operator_id)
+            if current_ratio > (1.5 * op_baseline):
+                ratio_pct = int(((current_ratio / op_baseline) - 1.0) * 100)
+                risk = "High" if ratio_pct >= 80 else "Medium"
+                flags.append({
+                    "operator_id": operator_id,
+                    "machine_id": machine_id,
+                    "flag_type": "Fuel Inefficiency",
+                    "risk_level": risk,
+                    "details": f"Burn rate is {current_ratio:.2f} L/cycle (+{ratio_pct}% above operator baseline of {op_baseline:.2f} L/cycle).",
+                    "timestamp": timestamp_str
+                })
+
+        # --- Rule 3: Low Productivity (Load Cycles < 3 AND Idling > 30 min) ---
+        if load_cycles < 3 and idling_time > 30:
+            flags.append({
+                "operator_id": operator_id,
+                "machine_id": machine_id,
+                "flag_type": "Low Productivity",
+                "risk_level": "Medium",
+                "details": f"Low output: only {load_cycles} load cycles logged with {int(idling_time)} min idling time.",
+                "timestamp": timestamp_str
+            })
+
+        # --- Rule 4: Critical Safety Pattern (Unfastened + Alert Triggered) ---
+        if seatbelt.lower() == "unfastened" and alert_triggered:
+            flags.append({
+                "operator_id": operator_id,
+                "machine_id": machine_id,
+                "flag_type": "Critical Safety Pattern",
+                "risk_level": "Critical",
+                "details": "CRITICAL HAZARD: Machine safety alert active while seatbelt remains unfastened.",
+                "timestamp": timestamp_str
+            })
+
+        # --- Rule 5: Fatigue Risk (composite >= 2 conditions) ---
+        # Condition A: Sluggish pacing / prolonged idling (>= 40 min)
+        cond_idling = idling_time >= 40
+        
+        # Condition B: High continuous engine hours in current shift (>= 5.5 hours)
+        shift_hours = (engine_hours - shift_start_engine_hours) if shift_start_engine_hours else 0.0
+        cond_shift_strain = shift_hours >= 5.5
+        
+        # Condition C: Late shift timestamp (13:30 or later, post-lunch circadian drop or end-of-shift)
+        cond_late_shift = dt.hour >= 14 or (dt.hour == 13 and dt.minute >= 30)
+
         fatigue_reasons = []
-        if idling >= 40:
-            fatigue_conditions += 1
-            fatigue_reasons.append(f"Idling {idling}min")
-        if ts.hour >= 14 or ts.hour <= 5:  # Late shift or early dawn
-            fatigue_conditions += 1
-            fatigue_reasons.append(f"Late-shift timestamp ({ts.strftime('%H:%M')})")
-        if seatbelt == "unfastened" or alert:
-            fatigue_conditions += 1
-            fatigue_reasons.append("Safety vigilance drop")
+        if cond_idling:
+            fatigue_reasons.append(f"prolonged idling ({int(idling_time)}m)")
+        if cond_shift_strain:
+            fatigue_reasons.append(f"extended shift operation ({shift_hours:.1f}h)")
+        if cond_late_shift:
+            fatigue_reasons.append(f"late-shift window ({dt.strftime('%H:%M')})")
 
-        if fatigue_conditions >= 2:
-            flag = BehaviorFlag(
-                operator_id=operator_id,
-                machine_id=machine_id,
-                flag_type="Fatigue Risk",
-                risk_level="High" if fatigue_conditions >= 3 else "Medium",
-                details=f"{' + '.join(fatigue_reasons)} ({fatigue_conditions}/3 conditions met).",
-                timestamp=ts
-            )
-            generated_flags.append(flag)
+        if len(fatigue_reasons) >= 2:
+            risk = "High" if len(fatigue_reasons) >= 3 else "Medium"
+            flags.append({
+                "operator_id": operator_id,
+                "machine_id": machine_id,
+                "flag_type": "Fatigue Risk",
+                "risk_level": risk,
+                "details": f"Composite fatigue risk detected ({len(fatigue_reasons)}/3 criteria): {', '.join(fatigue_reasons)}.",
+                "timestamp": timestamp_str
+            })
 
-    # Save newly detected flags if not already logged
-    for flag in generated_flags:
-        existing = db.query(BehaviorFlag).filter(
-            BehaviorFlag.operator_id == flag.operator_id,
-            BehaviorFlag.flag_type == flag.flag_type,
-            func.date(BehaviorFlag.timestamp) == flag.timestamp.date()
-        ).first()
-        if not existing:
-            db.add(flag)
+        return flags
 
-    db.commit()
+    def evaluate_telemetry_dataframe(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        Batch-evaluate an entire telemetry dataframe, tracking shift engine hours per shift.
+        """
+        if df.empty:
+            return []
 
-    # Return all flags for the operator
-    return db.query(BehaviorFlag).filter(BehaviorFlag.operator_id == operator_id).order_by(BehaviorFlag.timestamp.desc()).all()
+        # Update baselines first if not already present
+        if not self.baseline_ratios:
+            self.calculate_baselines_from_df(df)
+
+        all_flags: List[Dict[str, Any]] = []
+        
+        # Sort chronologically
+        df_sorted = df.sort_values(by=["operator_id", "machine_id", "timestamp"]).copy()
+        
+        # Track shift baseline engine hours per (operator, machine, date)
+        if "timestamp" in df_sorted.columns:
+            df_sorted["shift_date"] = pd.to_datetime(df_sorted["timestamp"]).dt.date
+        else:
+            df_sorted["shift_date"] = "default"
+
+        shift_min_hours = df_sorted.groupby(["operator_id", "machine_id", "shift_date"])["engine_hours"].min().to_dict()
+
+        for _, row in df_sorted.iterrows():
+            record = row.to_dict()
+            op = record.get("operator_id")
+            mach = record.get("machine_id")
+            s_date = record.get("shift_date")
+            min_hrs = shift_min_hours.get((op, mach, s_date), record.get("engine_hours", 0.0))
+            
+            flags = self.evaluate_telemetry_event(record, shift_start_engine_hours=min_hrs)
+            all_flags.extend(flags)
+
+        return all_flags
+
+
+# Singleton instance for simple imports
+rule_engine = BehaviorRuleEngine()
