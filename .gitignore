@@ -26,11 +26,15 @@ venv/
 env/
 ENV/
 
-# Environment Variables
+# Environment Variables & Secrets
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
 .env.local
 .env.*.local
-*.env
 
 # Model artifacts & FAISS indexes
 backend/app/ml/*.pkl
