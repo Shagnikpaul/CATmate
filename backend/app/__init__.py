@@ -1,0 +1,1 @@
+"""CatMate application package."""
