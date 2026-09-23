@@ -7,8 +7,8 @@ from typing import List
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://postgres.dpckgmoztmqwndshfbtr:eassybassworf.784r9@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
-    SECRET_KEY: str = "catmate-super-secret-key-2026-hackathon"
+    DATABASE_URL: str = ""
+    SECRET_KEY: str = "catmate-secret-key"
     SESSION_EXPIRE_HOURS: int = 24
     GROQ_API_KEY: str = ""
     ENVIRONMENT: str = "development"
