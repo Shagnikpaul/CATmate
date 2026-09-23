@@ -60,20 +60,21 @@ export interface MachineStatus {
 
 export type SeverityLevel = 'Low' | 'Medium' | 'High' | 'Critical';
 
-export interface StructuredIncident {
-  type: string;
-  location: string;
-  severity: SeverityLevel;
-}
+// export interface StructuredIncident {
+//   type: string;
+//   location: string;
+//   severity: SeverityLevel;
+// }
 
 export interface Incident {
   incident_id: string;
   operator_id: string;
-  operator_name?: string;
   machine_id: string;
-  raw_text: string;
-  photo_base64?: string | null;
-  structured: StructuredIncident;
+  raw_voice_text: string;
+  incident_type: string;
+  location: string;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
+  photo_url: string | null;
   timestamp: string;
 }
 

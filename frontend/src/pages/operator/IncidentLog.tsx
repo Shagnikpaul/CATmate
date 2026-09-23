@@ -191,11 +191,10 @@ export const IncidentLog: React.FC = () => {
         <button
           onClick={toggleListening}
           aria-label={isListening ? 'Stop capturing speech' : 'Start voice incident log'}
-          className={`btn-touch w-24 h-24 sm:w-28 sm:h-28 rounded-full flex flex-col items-center justify-center transition-all ${
-            isListening
+          className={`btn-touch w-24 h-24 sm:w-28 sm:h-28 rounded-full flex flex-col items-center justify-center transition-all ${isListening
               ? 'bg-red-600 hover:bg-red-700 text-white listening-pulse'
               : 'bg-[#FFC300] hover:bg-[#E5AF00] text-[#211E1C] shadow-lg'
-          }`}
+            }`}
         >
           {isListening ? (
             <>
@@ -303,23 +302,26 @@ export const IncidentLog: React.FC = () => {
                     </div>
 
                     <h3 className="text-base sm:text-lg font-bold font-industrial uppercase tracking-tight text-text-primary mt-0.5">
-                      {inc.structured.type} — <span className="font-normal text-sm text-text-secondary">{inc.structured.location}</span>
+                      {inc.incident_type} —{' '}
+                      <span className="font-normal text-sm text-text-secondary">
+                        {inc.location}
+                      </span>
                     </h3>
 
                     <p className="text-xs text-text-secondary italic mt-1 max-w-xl">
-                      &ldquo;{inc.raw_text}&rdquo;
+                      &ldquo;{inc.raw_voice_text}&rdquo;
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 self-end sm:self-center">
-                  {inc.photo_base64 && (
+                  {inc.photo_url &&  (
                     <span className="flex items-center gap-1 px-2 py-1 rounded bg-stone-200 dark:bg-stone-800 text-[11px] font-semibold text-text-secondary">
                       <Camera className="w-3.5 h-3.5 text-[#FFC300]" />
                       <span>Photo</span>
                     </span>
                   )}
-                  <StatusBadge status={inc.structured.severity} size="md" />
+                  <StatusBadge status={inc.severity} size="md" />
                 </div>
               </div>
             ))}

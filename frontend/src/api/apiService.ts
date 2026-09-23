@@ -608,6 +608,51 @@ class ApiService {
     scheduled_start: string;
     estimated_time_min: number;
   }): Promise<Task> {
+
+    if (!this.useMock) {
+      try {
+        const res = await fetch(`${BASE_URL}/api/manager/tasks`, {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(params)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+
+          // Backend returns only:
+          // { task_id, status }
+          // Build the complete frontend Task using the original params.
+          const newTask: Task = {
+            task_id: data.task_id,
+            operator_id: params.operator_id,
+            machine_id: params.machine_id,
+            task_type: params.task_type,
+            zone: params.zone,
+            scheduled_start: params.scheduled_start,
+            estimated_time_min: params.estimated_time_min,
+            status: 'pending'
+          };
+
+          this.tasks.push(newTask);
+          this.notify();
+
+          return newTask;
+        }
+
+        console.warn(
+          'Backend task allocation failed:',
+          await res.text()
+        );
+      } catch (e) {
+        console.warn(
+          'Backend task allocation failed, falling back to mock:',
+          e
+        );
+      }
+    }
+
+    // Mock fallback
     const newTask: Task = {
       task_id: `T${String(this.tasks.length + 1).padStart(3, '0')}`,
       operator_id: params.operator_id,
@@ -621,6 +666,7 @@ class ApiService {
 
     this.tasks.push(newTask);
     this.notify();
+
     return newTask;
   }
 

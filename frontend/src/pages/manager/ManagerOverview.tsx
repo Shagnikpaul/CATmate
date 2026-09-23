@@ -181,9 +181,8 @@ export const ManagerOverview: React.FC = () => {
                       <tr
                         key={op.operator_id}
                         onClick={() => handleSelectRow(op)}
-                        className={`cursor-pointer transition hover:bg-stone-100 dark:hover:bg-stone-800/60 ${
-                          isSelected ? 'bg-stone-100 dark:bg-stone-800 border-l-4 border-l-[#FFC300]' : ''
-                        }`}
+                        className={`cursor-pointer transition hover:bg-stone-100 dark:hover:bg-stone-800/60 ${isSelected ? 'bg-stone-100 dark:bg-stone-800 border-l-4 border-l-[#FFC300]' : ''
+                          }`}
                       >
                         <td className="p-3.5">
                           <div className="font-bold text-text-primary text-base font-industrial tracking-wide">
@@ -328,11 +327,19 @@ export const ManagerOverview: React.FC = () => {
                     >
                       <div className="flex items-center justify-between font-bold">
                         <span className="text-text-primary font-industrial uppercase">
-                          {inc.structured.type}
+                          {inc.incident_type}
                         </span>
-                        <StatusBadge status={inc.structured.severity} size="sm" />
+
+                        <StatusBadge status={inc.severity} size="sm" />
                       </div>
-                      <p className="text-text-secondary italic mt-1">&ldquo;{inc.raw_text}&rdquo;</p>
+
+                      <p className="text-text-secondary italic mt-1">
+                        &ldquo;{inc.raw_voice_text}&rdquo;
+                      </p>
+
+                      <div className="text-[10px] text-text-secondary mt-1">
+                        {inc.location}
+                      </div>
                     </div>
                   ))}
                 </div>
